@@ -7,6 +7,24 @@
 
 VoxNovel is an innovative program that leverages the capabilities of booknlp to analyze literature, attribute quotations to specific characters, and generate a tailored audiobook where each character has a distinct voice through coqui tts. This not only provides an immersive audiobook experience but also brings each character to life with a unique voice, making the listening experience much more engaging.
 
+## 🤖 Agentic MCP Server
+VoxNovel has been modernized with an integrated Model Context Protocol (MCP) server! This allows you to interact with VoxNovel through AI agents (like Claude Desktop) with minimal human interaction.
+You can run the MCP server using:
+```bash
+python mcp_server.py
+```
+Or configure it in your `claude_desktop_config.json`:
+```json
+{
+  "mcpServers": {
+    "VoxNovel": {
+      "command": "python",
+      "args": ["/path/to/VoxNovel/mcp_server.py"]
+    }
+  }
+}
+```
+
 
 ### 🗣️ Included TTS Models
 All Coqui TTS models-(Tacotron, Tacotron2, Glow-TTS, Speedy-Speech, Align-TTS, FastPitch, FastSpeech, FastSpeech2, SC-GlowTTS, Capacitron, OverFlow, Neural HMM TTS, Delightful TTS, ⓍTTS, VITS, 🐸 YourTTS, 🐢 Tortoise, 🐶 Bark), and STYLETTS2.
