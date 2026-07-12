@@ -183,3 +183,4 @@ wcwidth==0.2.9
 weasel==0.3.4
 Werkzeug==3.0.1
 yarl==1.9.2
+mcp>=1.0.0
