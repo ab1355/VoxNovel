@@ -1,10 +1,15 @@
 import os
+import sys
 from mcp.server.fastmcp import FastMCP
 import headless_voxnovel
 import subprocess
 
 # Initialize FastMCP server
 mcp = FastMCP("VoxNovel")
+
+EXCLUDED_VOICE_ACTORS = ['cond_latent_example', '.DS_Store']
+CALIBRE_SUPPORTED_FORMATS = ('.cbz', '.cbr', '.cbc', '.chm', '.epub', '.fb2', '.html', '.lit', '.lrf', 
+                             '.mobi', '.odt', '.pdf', '.prc', '.pdb', '.pml', '.rb', '.rtf', '.snb', '.tcr')
 
 @mcp.tool()
 def list_available_voices() -> str:
@@ -14,7 +19,7 @@ def list_available_voices() -> str:
         return "Voice actors folder not found."
     
     voices = []
-    voice_actors = [va for va in os.listdir(voice_actors_folder) if va != "cond_latent_example" and va != ".DS_Store"]
+    voice_actors = [va for va in os.listdir(voice_actors_folder) if os.path.isdir(os.path.join(voice_actors_folder, va)) and va not in EXCLUDED_VOICE_ACTORS]
     for va in voice_actors:
         voice_path = os.path.join(voice_actors_folder, va)
         model_path = os.path.join(voice_path, "model")
@@ -39,8 +44,7 @@ def convert_and_process_ebook(file_path: str) -> str:
     if not os.path.exists(file_path):
         return f"Error: File {file_path} not found."
         
-    if file_path.lower().endswith(('.cbz', '.cbr', '.cbc', '.chm', '.epub', '.fb2', '.html', '.lit', '.lrf', 
-                                  '.mobi', '.odt', '.pdf', '.prc', '.pdb', '.pml', '.rb', '.rtf', '.snb', '.tcr')):
+    if file_path.lower().endswith(CALIBRE_SUPPORTED_FORMATS):
         try:
             if headless_voxnovel.calibre_installed():
                 file_path = headless_voxnovel.convert_with_calibre(file_path)
@@ -55,6 +59,10 @@ def convert_and_process_ebook(file_path: str) -> str:
             headless_voxnovel.process_chapter_files("Working_files/Book/Chapter_txt_files", "Working_files/Book/book.csv")
             return f"Successfully processed epub: {file_path}"
         elif file_path.lower().endswith('.txt'):
+            import shutil
+            os.makedirs("Working_files/Book", exist_ok=True)
+            shutil.copy(file_path, "Working_files/Book/book.txt")
+            # Directly processes the csv generated from the txt
             headless_voxnovel.process_and_split_csv("Working_files/Book/book.csv", 'NEWCHAPTERABC')
             return f"Successfully processed text file: {file_path}"
         else:
@@ -65,18 +73,19 @@ def convert_and_process_ebook(file_path: str) -> str:
 @mcp.tool()
 def run_audio_generation() -> str:
     """
-    Runs the auto_noGui_run.py script which handles the end-to-step audio generation 
+    Runs the auto_noGui_run.py script which handles the end-to-end audio generation 
     with zero human interaction, processing whatever is in the Working_files.
     """
     try:
         # Run auto_noGui_run.py
         result = subprocess.run(
-            ["python", "auto_noGui_run.py"],
+            [sys.executable, "auto_noGui_run.py"],
             capture_output=True,
             text=True
         )
         if result.returncode == 0:
-            return "Audio generation completed successfully.\n" + result.stdout[-500:]
+            lines = result.stdout.splitlines()[-20:] if result.stdout else []
+            return "Audio generation completed successfully.\n" + "\n".join(lines)
         else:
             return f"Audio generation failed.\nError: {result.stderr}"
     except Exception as e:
