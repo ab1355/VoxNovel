@@ -1037,15 +1037,20 @@ _SFX_KEYWORDS = [
     "city", "traffic", "explosion", "crash", "battle", "sword", "horse",
 ]
 
+# Bounds for asterisk-wrapped *action descriptions* like *thunder rumbles*.
+# Below 3 chars catches only stray punctuation; above 60 chars would match
+# entire paragraphs enclosed in asterisks intended for bold/italic markdown.
+_SFX_MIN_ACTION_LEN = 3
+_SFX_MAX_ACTION_LEN = 60
+
 
 def detect_sfx_in_text(text: str) -> bool:
     lower = text.lower()
     for kw in _SFX_KEYWORDS:
         if kw in lower:
             return True
-    # Match *action descriptions* like *thunder rumbles* (3–60 chars to avoid
-    # matching single punctuation or entire paragraphs wrapped in asterisks).
-    if re.search(r'\*[^*]{3,60}\*', lower):
+    # Match *action descriptions* like *thunder rumbles*.
+    if re.search(r'\*[^*]{' + str(_SFX_MIN_ACTION_LEN) + r',' + str(_SFX_MAX_ACTION_LEN) + r'}\*', lower):
         return True
     return False
 
