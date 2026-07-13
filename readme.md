@@ -20,7 +20,7 @@ The complete session configuration can now be saved and restored:
 Persisted settings include: selected TTS model, speaker → voice actor mappings, per-speaker language codes, silence duration, narrator-only flag, and fast-model toggle.
 
 ### 🔇 Whisper Hallucination Cleanup *(optional)*
-After each audio fragment is generated, VoxNovel can transcribe it with [OpenAI Whisper](https://github.com/openai/whisper) and compare the transcription to the original text.  Clips whose similarity falls below a configurable threshold are automatically regenerated once before being kept.
+After each audio fragment is generated, VoxNovel can transcribe it with [OpenAI Whisper](https://github.com/openai/whisper) and compare the transcription to the original text.  Clips whose similarity falls below a fixed threshold (0.35 by default, set via the `min_ratio` parameter of `validate_audio_with_whisper()` in `gui_run.py`) are automatically regenerated once before being kept.
 
 Enable it with the **"Enable Whisper hallucination cleanup"** checkbox in the GUI, or answer `yes` at the terminal prompt.
 

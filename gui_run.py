@@ -948,6 +948,7 @@ import os
 import time
 import json
 import difflib
+import re as _re
 
 import os
 import pandas as pd
@@ -1018,6 +1019,30 @@ def validate_audio_with_whisper(audio_path: str, expected_text: str,
         return True
 
 
+def _whisper_regenerate_clip(tts, fragment: str, clip_path: str,
+                              selected_tts_model: str, voice_actor,
+                              language_code: str) -> None:
+    """
+    Attempt one regeneration of *clip_path* using the same TTS branch as the
+    main generation loop.  Called when Whisper validation flags a hallucination.
+    Keeps the clip even on a second failure so we never drop audio silently.
+    """
+    try:
+        if "multi-dataset" in selected_tts_model and "multilingual" in selected_tts_model:
+            tts.tts_to_file(text=fragment, file_path=clip_path,
+                            speaker_wav=list_reference_files(voice_actor),
+                            language=language_code)
+        elif "multilingual" in selected_tts_model:
+            tts.tts_to_file(text=fragment, file_path=clip_path,
+                            language=language_code)
+        else:
+            tts.tts_to_file(text=fragment, file_path=clip_path)
+        if not validate_audio_with_whisper(clip_path, fragment):
+            print("[Whisper] Second attempt still flagged – keeping clip anyway.")
+    except Exception as regen_exc:
+        print(f"[Whisper] Regeneration failed: {regen_exc}")
+
+
 # ---------------------------------------------------------------------------
 # Sound-effect generation support (opt-in – requires audiocraft)
 # ---------------------------------------------------------------------------
@@ -1037,7 +1062,6 @@ _SFX_KEYWORDS = [
     "crowd", "footsteps", "door", "knock", "bell", "clock", "birds", "forest",
     "city", "traffic", "explosion", "crash", "battle", "sword", "horse",
 ]
-import re as _re
 
 
 def detect_sfx_in_text(text: str) -> bool:
@@ -1067,8 +1091,7 @@ def generate_sfx_audio(description: str, output_path: str,
         sfx_model = _sfx_model_cache["sfx"]
         sfx_model.set_generation_params(duration=duration)
         wav = sfx_model.generate([description])
-        import torchaudio as _ta
-        _ta.save(output_path, wav[0].cpu(), sample_rate=16000)
+        torchaudio.save(output_path, wav[0].cpu(), sample_rate=16000)
         print(f"[SFX] Generated: {output_path}")
         return True
     except Exception as exc:
@@ -1942,9 +1965,9 @@ def get_voice_demo_files(voice_actor: str):
         try:
             print(f"Generating demo preview for cloned voice '{voice_actor}' …")
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-            # Re-use the already loaded TTS instance when possible to avoid
-            # loading the model a second time.
-            demo_tts = tts if (tts is not None and selected_tts_model in str(type(tts))) else TTS(selected_tts_model, progress_bar=False).to(device)
+            # Always use a fresh TTS instance for demo generation so we don't
+            # accidentally reuse a model loaded for a different configuration.
+            demo_tts = TTS(selected_tts_model, progress_bar=False).to(device)
             demo_tts.tts_to_file(
                 text=demo_text,
                 file_path=demo_path,
@@ -2090,8 +2113,6 @@ def generate_audio():
     
     global current_model
     global STTS
-
-    #this will make it so that I can't modify the chapter delminator after I click generate
     disable_chapter_delimiter_entry()
     
     ensure_temp_folder()
@@ -2310,21 +2331,9 @@ def generate_audio():
                             os.remove(clip_path)
                         except OSError:
                             pass
-                        # Attempt one regeneration (best-effort, same branch)
-                        try:
-                            if "multi-dataset" in selected_tts_model and "multilingual" in selected_tts_model:
-                                tts.tts_to_file(text=fragment, file_path=clip_path,
-                                                speaker_wav=list_reference_files(voice_actor),
-                                                language=language_code)
-                            elif "multilingual" in selected_tts_model:
-                                tts.tts_to_file(text=fragment, file_path=clip_path,
-                                                language=language_code)
-                            else:
-                                tts.tts_to_file(text=fragment, file_path=clip_path)
-                            if not validate_audio_with_whisper(clip_path, fragment):
-                                print("[Whisper] Second attempt still flagged – keeping clip anyway.")
-                        except Exception as regen_exc:
-                            print(f"[Whisper] Regeneration failed: {regen_exc}")
+                        _whisper_regenerate_clip(tts, fragment, clip_path,
+                                                 selected_tts_model, voice_actor,
+                                                 language_code)
 
                 # -----------------------------------------------------------------
                 # SFX generation (opt-in ambient sound effects)
@@ -2981,9 +2990,6 @@ def generate_audio(text, audio_id, language, speaker, voice_actor):
     global current_model
     global fast_tts
 
-
-    ensure_temp_folder()
-
     # List available TTS models
     # print(TTS().list_models())
 
@@ -3149,19 +3155,9 @@ def generate_audio(text, audio_id, language, speaker, voice_actor):
                         os.remove(clip_path)
                     except OSError:
                         pass
-                    try:
-                        if "multi-dataset" in selected_tts_model and "multilingual" in selected_tts_model:
-                            tts.tts_to_file(text=fragment, file_path=clip_path,
-                                            speaker_wav=list_reference_files(voice_actor),
-                                            language=language_code)
-                        elif "multilingual" in selected_tts_model:
-                            tts.tts_to_file(text=fragment, file_path=clip_path, language=language_code)
-                        else:
-                            tts.tts_to_file(text=fragment, file_path=clip_path)
-                        if not validate_audio_with_whisper(clip_path, fragment):
-                            print("[Whisper] Second attempt still flagged – keeping clip anyway.")
-                    except Exception as regen_exc:
-                        print(f"[Whisper] Regeneration failed: {regen_exc}")
+                    _whisper_regenerate_clip(tts, fragment, clip_path,
+                                             selected_tts_model, voice_actor,
+                                             language_code)
 
             # SFX generation (opt-in)
             if enable_sfx_var.get() and AUDIOCRAFT_AVAILABLE and detect_sfx_in_text(fragment):
