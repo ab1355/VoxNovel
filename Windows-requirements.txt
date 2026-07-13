@@ -182,3 +182,5 @@ weasel==0.3.4
 Werkzeug==3.0.1
 yarl==1.9.2
 mcp>=1.0.0
+# Optional: Whisper hallucination cleanup
+openai-whisper
