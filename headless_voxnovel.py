@@ -960,7 +960,6 @@ import shutil
 
 import json
 import difflib
-import re as _re
 
 import torch
 import torchaudio
@@ -1044,7 +1043,9 @@ def detect_sfx_in_text(text: str) -> bool:
     for kw in _SFX_KEYWORDS:
         if kw in lower:
             return True
-    if _re.search(r'\*[^*]{3,60}\*', lower):
+    # Match *action descriptions* like *thunder rumbles* (3–60 chars to avoid
+    # matching single punctuation or entire paragraphs wrapped in asterisks).
+    if re.search(r'\*[^*]{3,60}\*', lower):
         return True
     return False
 
@@ -1386,9 +1387,9 @@ def update_voice_actor(speaker):
     print(f"Updated voice for {speaker}: {selected_voice_actor}")
 
     # Use the generated-demo version so the user hears TTS output, not the raw reference.
-    reference_files = get_voice_demo_files(selected_voice_actor)
-    if reference_files:  # Check if there are any reference files
-        random_file = random.choice(reference_files)
+    demo_files = get_voice_demo_files(selected_voice_actor)
+    if demo_files:  # Check if there are any demo files
+        random_file = random.choice(demo_files)
         try:
             # Stop any currently playing music or sound
             pygame.mixer.music.stop()
