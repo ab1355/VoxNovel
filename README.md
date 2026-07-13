@@ -19,14 +19,14 @@ VoxNovel is a Python-based workflow for turning ebooks into character-driven aud
    - `Ubuntu_requirements.txt`
    - `Windows-requirements.txt`
    - `MAC-requirements.txt`
-   - `SteamDeck_Requirments.txt`
+   - `SteamDeck_Requirments.txt` (note: the filename contains a deliberate misspelling – "Requirments" instead of "Requirements")
 
 2. Start the workflow you want to use:
    - GUI: `python gui_run.py`
    - Headless: `python headless_voxnovel.py`
    - MCP server: `python mcp_server.py`
 
-3. For the full project documentation, usage notes, screenshots, and install details, see `readme.md`.
+3. For the full project documentation, usage notes, screenshots, and install details, see `docs/README.md`.
 
 ## Notes for contributors
 

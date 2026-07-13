@@ -11,7 +11,7 @@ VoxNovel is a Python project for processing ebooks into audiobook-style output u
 - `mcp_server.py` – MCP server entry point for agent-driven workflows
 - `auto_noGui_run.py` – batch generation pipeline
 - `shell_install_scripts/` – platform-specific install and run scripts
-- `readme.md` – detailed project documentation
+- `docs/README.md` – detailed project documentation
 
 ## Working conventions
 
@@ -32,5 +32,5 @@ If you touch the MCP server or workflow scripts, also sanity-check that the entr
 
 ## Documentation expectations
 
-- Keep the root `README.md` and `readme.md` aligned in purpose and scope.
+- Keep `README.md` (project overview) and `docs/README.md` (detailed documentation) aligned in purpose and scope.
 - When adding new features or workflows, document them briefly in the relevant README section so the repository remains discoverable for future contributors.
