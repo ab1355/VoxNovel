@@ -7,6 +7,32 @@
 
 VoxNovel is an innovative program that leverages the capabilities of booknlp to analyze literature, attribute quotations to specific characters, and generate a tailored audiobook where each character has a distinct voice through coqui tts. This not only provides an immersive audiobook experience but also brings each character to life with a unique voice, making the listening experience much more engaging.
 
+## ✨ New Features
+
+### 🎙️ Generated Voice Previews
+Every bundled voice model now has a **pre-generated demo clip** so you hear the actual TTS output when selecting a voice, not a raw reference recording. Cloned voices also get a generated demo clip (cached under `tortoise/_cloned_voice_demos/`) the first time they are selected — subsequent selections play instantly from cache.
+
+### 💾 Project Save / Load
+The complete session configuration can now be saved and restored:
+- **GUI**: use the **Save Project** / **Load Project** buttons added to the voice-selection panel.  Settings are stored as a `.json` file.
+- **Headless**: the terminal will ask at startup whether to load a saved project, and offer to save at the end of generation.
+
+Persisted settings include: selected TTS model, speaker → voice actor mappings, per-speaker language codes, silence duration, narrator-only flag, and fast-model toggle.
+
+### 🔇 Whisper Hallucination Cleanup *(optional)*
+After each audio fragment is generated, VoxNovel can transcribe it with [OpenAI Whisper](https://github.com/openai/whisper) and compare the transcription to the original text.  Clips whose similarity falls below a configurable threshold are automatically regenerated once before being kept.
+
+Enable it with the **"Enable Whisper hallucination cleanup"** checkbox in the GUI, or answer `yes` at the terminal prompt.
+
+> **Install dependency:** `pip install openai-whisper`
+
+### 🔊 Ambient SFX Generation *(opt-in, requires audiocraft)*
+When enabled, passages that describe a location or sound (thunder, rain, forest, footsteps, etc.) are detected and a short ambient sound effect is generated alongside the speech audio using [AudioCraft AudioGen](https://github.com/facebookresearch/audiocraft).
+
+Enable it with the **"Enable ambient SFX generation"** checkbox in the GUI, or answer `yes` at the terminal prompt.
+
+> **Install dependency:** `pip install audiocraft`
+
 ## 🤖 Agentic MCP Server
 VoxNovel has been modernized with an integrated Model Context Protocol (MCP) server! This allows you to interact with VoxNovel through AI agents (like Claude Desktop) with minimal human interaction.
 You can run the MCP server using:

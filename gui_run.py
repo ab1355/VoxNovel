@@ -946,6 +946,8 @@ import pandas as pd
 import random
 import os
 import time
+import json
+import difflib
 
 import os
 import pandas as pd
@@ -964,6 +966,114 @@ nltk.download('punkt')
 
 # Ensure that nltk punkt is downloaded
 nltk.download('punkt', quiet=True)
+
+# ---------------------------------------------------------------------------
+# Whisper hallucination-cleanup support (optional dependency)
+# ---------------------------------------------------------------------------
+try:
+    import whisper as _whisper_module
+    WHISPER_AVAILABLE = True
+except ImportError:
+    _whisper_module = None
+    WHISPER_AVAILABLE = False
+    print("openai-whisper not installed – hallucination cleanup will be disabled.")
+
+_whisper_model_cache = {}
+
+
+def _load_whisper_model(model_name: str = "base"):
+    """Load (and cache) a Whisper model by name."""
+    if not WHISPER_AVAILABLE:
+        return None
+    if model_name not in _whisper_model_cache:
+        _whisper_model_cache[model_name] = _whisper_module.load_model(model_name)
+    return _whisper_model_cache[model_name]
+
+
+def validate_audio_with_whisper(audio_path: str, expected_text: str,
+                                 model_name: str = "base",
+                                 min_ratio: float = 0.35) -> bool:
+    """
+    Transcribe *audio_path* with Whisper and compare to *expected_text*.
+
+    Returns True when the clip looks good, False when it is likely a
+    hallucination (transcription ratio vs expected text is below *min_ratio*).
+    """
+    if not WHISPER_AVAILABLE or not os.path.exists(audio_path):
+        return True
+    try:
+        model = _load_whisper_model(model_name)
+        result = model.transcribe(audio_path, fp16=False)
+        transcribed = result.get("text", "").strip().lower()
+        expected_clean = expected_text.strip().lower()
+        if not expected_clean:
+            return True
+        ratio = difflib.SequenceMatcher(None, transcribed, expected_clean).ratio()
+        if ratio < min_ratio:
+            print(f"[Whisper] Low similarity ({ratio:.2f}) for: '{expected_text[:60]}'")
+            return False
+        return True
+    except Exception as exc:
+        print(f"[Whisper] Validation error (ignoring): {exc}")
+        return True
+
+
+# ---------------------------------------------------------------------------
+# Sound-effect generation support (opt-in – requires audiocraft)
+# ---------------------------------------------------------------------------
+try:
+    from audiocraft.models import AudioGen as _AudioGen
+    AUDIOCRAFT_AVAILABLE = True
+except ImportError:
+    _AudioGen = None
+    AUDIOCRAFT_AVAILABLE = False
+    print("audiocraft not installed – SFX generation will be disabled.")
+
+_sfx_model_cache = {}
+
+# Keywords that suggest a location or ambient sound description
+_SFX_KEYWORDS = [
+    "thunder", "rain", "wind", "storm", "fire", "water", "river", "ocean",
+    "crowd", "footsteps", "door", "knock", "bell", "clock", "birds", "forest",
+    "city", "traffic", "explosion", "crash", "battle", "sword", "horse",
+]
+import re as _re
+
+
+def detect_sfx_in_text(text: str) -> bool:
+    """Return True if the passage likely warrants an ambient sound effect."""
+    lower = text.lower()
+    for kw in _SFX_KEYWORDS:
+        if kw in lower:
+            return True
+    # Also match *action descriptions* like *thunder rumbles*
+    if _re.search(r'\*[^*]{3,60}\*', lower):
+        return True
+    return False
+
+
+def generate_sfx_audio(description: str, output_path: str,
+                        duration: float = 3.0) -> bool:
+    """
+    Generate a short sound effect for *description* and save to *output_path*.
+    Returns True on success, False if audiocraft is unavailable.
+    """
+    if not AUDIOCRAFT_AVAILABLE:
+        print(f"[SFX] audiocraft not available – skipping SFX for: {description}")
+        return False
+    try:
+        if "sfx" not in _sfx_model_cache:
+            _sfx_model_cache["sfx"] = _AudioGen.get_pretrained("facebook/audiogen-medium")
+        sfx_model = _sfx_model_cache["sfx"]
+        sfx_model.set_generation_params(duration=duration)
+        wav = sfx_model.generate([description])
+        import torchaudio as _ta
+        _ta.save(output_path, wav[0].cpu(), sample_rate=16000)
+        print(f"[SFX] Generated: {output_path}")
+        return True
+    except Exception as exc:
+        print(f"[SFX] Generation error: {exc}")
+        return False
 
 
 demo_text = "Imagine a world where endless possibilities await around every corner."
@@ -1191,8 +1301,10 @@ def update_voice_actor(speaker):
     speaker_voice_map[speaker] = selected_voice_actor
     print(f"Updated voice for {speaker}: {selected_voice_actor}")
 
-    # Get a random reference file for the selected voice actor
-    reference_files = list_reference_files(selected_voice_actor)
+    # Use the generated-demo version of the voice for playback so the user
+    # hears what the TTS output will actually sound like rather than the raw
+    # reference recording.
+    reference_files = get_voice_demo_files(selected_voice_actor)
     if reference_files:  # Check if there are any reference files
         random_file = random.choice(reference_files)
         try:
@@ -1210,6 +1322,7 @@ def update_voice_actor(speaker):
                 sound.play()
         except Exception as e:
             print(f"Could not play the audio file: {e}")
+
 
 
 # Function to split long strings into parts
@@ -1445,6 +1558,39 @@ single_voice_checkbox = ttk.Checkbutton(
 )
 single_voice_checkbox.pack(side=tk.LEFT, padx=5)
 
+# Checkbox for Whisper hallucination cleanup
+enable_whisper_var = tk.BooleanVar(value=False)
+_whisper_checkbox_text = (
+    "Enable Whisper hallucination cleanup"
+    if WHISPER_AVAILABLE
+    else "Whisper cleanup (install openai-whisper to enable)"
+)
+enable_whisper_checkbox = ttk.Checkbutton(
+    checkbox_frame,
+    text=_whisper_checkbox_text,
+    variable=enable_whisper_var,
+    onvalue=True,
+    offvalue=False,
+    state="normal" if WHISPER_AVAILABLE else "disabled",
+)
+enable_whisper_checkbox.pack(side=tk.LEFT, padx=5)
+
+# Checkbox for SFX generation
+enable_sfx_var = tk.BooleanVar(value=False)
+_sfx_checkbox_text = (
+    "Enable ambient SFX generation"
+    if AUDIOCRAFT_AVAILABLE
+    else "SFX generation (install audiocraft to enable)"
+)
+enable_sfx_checkbox = ttk.Checkbutton(
+    checkbox_frame,
+    text=_sfx_checkbox_text,
+    variable=enable_sfx_var,
+    onvalue=True,
+    offvalue=False,
+    state="normal" if AUDIOCRAFT_AVAILABLE else "disabled",
+)
+enable_sfx_checkbox.pack(side=tk.LEFT, padx=5)
 
 
 
@@ -1583,6 +1729,99 @@ add_fine_tuned_xtts_button = ttk.Button(
 add_fine_tuned_xtts_button.pack(side=tk.LEFT, padx=5)
 
 
+# ---------------------------------------------------------------------------
+# Project Save / Load
+# ---------------------------------------------------------------------------
+
+def save_project():
+    """Persist the current voice/model configuration to a JSON file."""
+    file_path = filedialog.asksaveasfilename(
+        title="Save VoxNovel Project",
+        defaultextension=".json",
+        filetypes=[("VoxNovel Project", "*.json"), ("All Files", "*.*")],
+        parent=root,
+    )
+    if not file_path:
+        return
+    project = {
+        "selected_tts_model": selected_tts_model,
+        "speaker_voice_map": speaker_voice_map,
+        "character_languages": character_languages,
+        "silence_duration_ms": SILENCE_DURATION_MS,
+        "use_narrator_voice": single_voice_checkbox_var.get(),
+        "include_fast_models": include_single_models_var.get(),
+        "enable_whisper": enable_whisper_var.get(),
+        "enable_sfx": enable_sfx_var.get(),
+        "current_language": current_language,
+    }
+    try:
+        with open(file_path, "w", encoding="utf-8") as fh:
+            json.dump(project, fh, indent=2)
+        messagebox.showinfo("Saved", f"Project saved to:\n{file_path}", parent=root)
+    except Exception as exc:
+        messagebox.showerror("Error", f"Could not save project:\n{exc}", parent=root)
+
+
+def load_project():
+    """Restore a previously saved voice/model configuration from a JSON file."""
+    file_path = filedialog.askopenfilename(
+        title="Load VoxNovel Project",
+        filetypes=[("VoxNovel Project", "*.json"), ("All Files", "*.*")],
+        parent=root,
+    )
+    if not file_path:
+        return
+    try:
+        with open(file_path, "r", encoding="utf-8") as fh:
+            project = json.load(fh)
+    except Exception as exc:
+        messagebox.showerror("Error", f"Could not load project:\n{exc}", parent=root)
+        return
+
+    global selected_tts_model, speaker_voice_map, character_languages
+    global SILENCE_DURATION_MS, current_language
+
+    selected_tts_model = project.get("selected_tts_model", selected_tts_model)
+    speaker_voice_map.update(project.get("speaker_voice_map", {}))
+    character_languages.update(project.get("character_languages", {}))
+    SILENCE_DURATION_MS = project.get("silence_duration_ms", SILENCE_DURATION_MS)
+    current_language = project.get("current_language", current_language)
+
+    # Restore GUI widget states
+    tts_model_combobox.set(selected_tts_model)
+    silence_duration_var.set(str(SILENCE_DURATION_MS))
+    single_voice_checkbox_var.set(project.get("use_narrator_voice", False))
+    include_single_models_var.set(project.get("include_fast_models", False))
+    if WHISPER_AVAILABLE:
+        enable_whisper_var.set(project.get("enable_whisper", False))
+    if AUDIOCRAFT_AVAILABLE:
+        enable_sfx_var.set(project.get("enable_sfx", False))
+
+    update_voice_comboboxes()
+    for spkr, voice in speaker_voice_map.items():
+        if spkr in voice_comboboxes:
+            voice_comboboxes[spkr].set(voice)
+
+    messagebox.showinfo("Loaded", f"Project loaded from:\n{file_path}", parent=root)
+
+
+# Save/Load project buttons
+save_project_button = ttk.Button(
+    new_buttons_frame,
+    text="Save Project",
+    command=save_project,
+)
+save_project_button.pack(side=tk.LEFT, padx=5)
+
+load_project_button = ttk.Button(
+    new_buttons_frame,
+    text="Load Project",
+    command=load_project,
+)
+load_project_button.pack(side=tk.LEFT, padx=5)
+
+
+
 
 
 
@@ -1661,6 +1900,64 @@ def list_reference_files(voice_actor):
     # List all .wav and .mp3 files in the folder
     reference_files = [os.path.join(single_voice_actor_folder, file) for file in os.listdir(single_voice_actor_folder) if file.endswith((".wav", ".mp3"))]
     return reference_files
+
+
+def get_voice_demo_files(voice_actor: str):
+    """
+    Return audio files suitable for *preview* playback when a voice is selected.
+
+    • Built-in multi-speaker and single-model voices already have a generated
+      demo cache – delegate to ``list_reference_files()``.
+    • Cloned voices (stored under ``tortoise/voices/``) would otherwise play
+      back their raw reference recording.  This function instead generates a
+      short demo clip using the currently selected TTS model and caches it
+      under ``tortoise/_cloned_voice_demos/<voice_actor>/demo.wav`` so that
+      every subsequent selection plays the *generated* voice, not the source
+      reference.
+    """
+    global multi_voice_model_voice_list1, multi_voice_model_voice_list2
+    global multi_voice_model_voice_list3, selected_tts_model, tts
+
+    # Multi-speaker model voices and named TTS models already use a generated
+    # demo – reuse the existing path.
+    if (voice_actor in multi_voice_model_voice_list1
+            or voice_actor in multi_voice_model_voice_list2
+            or voice_actor in multi_voice_model_voice_list3
+            or "tts_models" in voice_actor):
+        return list_reference_files(voice_actor)
+
+    # Cloned voice: check for a previously generated demo first.
+    demo_dir = os.path.join("tortoise", "_cloned_voice_demos", voice_actor)
+    demo_path = os.path.join(demo_dir, "demo.wav")
+    create_folder_if_not_exists(demo_dir)
+
+    if os.path.exists(demo_path):
+        return [demo_path]
+
+    # Get the reference files for the cloned voice so we can use them as the
+    # speaker conditioning input.
+    ref_files = list_reference_files(voice_actor)
+
+    if ref_files and "multilingual" in selected_tts_model and "multi-dataset" in selected_tts_model:
+        try:
+            print(f"Generating demo preview for cloned voice '{voice_actor}' …")
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            # Re-use the already loaded TTS instance when possible to avoid
+            # loading the model a second time.
+            demo_tts = tts if (tts is not None and selected_tts_model in str(type(tts))) else TTS(selected_tts_model, progress_bar=False).to(device)
+            demo_tts.tts_to_file(
+                text=demo_text,
+                file_path=demo_path,
+                speaker_wav=ref_files[0],
+                language="en",
+            )
+            print(f"Demo cached at {demo_path}")
+            return [demo_path]
+        except Exception as exc:
+            print(f"Could not generate demo for '{voice_actor}': {exc}")
+
+    # Fallback: return the raw reference files (original behaviour).
+    return ref_files
 
 
 # List of language codes and their display names
@@ -2002,7 +2299,40 @@ def generate_audio():
                         tts = TTS(selected_tts_model, progress_bar=True).to(device)
                     tts.tts_to_file(text=fragment,file_path=f"Working_files/temp/{temp_count}.wav")  # Assuming the tts_to_file function has default arguments for unspecified parameters
 
-                
+                # -----------------------------------------------------------------
+                # Whisper hallucination cleanup (post-generation validation)
+                # -----------------------------------------------------------------
+                clip_path = f"Working_files/temp/{temp_count}.wav"
+                if enable_whisper_var.get() and WHISPER_AVAILABLE and os.path.exists(clip_path):
+                    if not validate_audio_with_whisper(clip_path, fragment):
+                        print(f"[Whisper] Hallucination detected – removing clip and regenerating once: '{fragment[:60]}'")
+                        try:
+                            os.remove(clip_path)
+                        except OSError:
+                            pass
+                        # Attempt one regeneration (best-effort, same branch)
+                        try:
+                            if "multi-dataset" in selected_tts_model and "multilingual" in selected_tts_model:
+                                tts.tts_to_file(text=fragment, file_path=clip_path,
+                                                speaker_wav=list_reference_files(voice_actor),
+                                                language=language_code)
+                            elif "multilingual" in selected_tts_model:
+                                tts.tts_to_file(text=fragment, file_path=clip_path,
+                                                language=language_code)
+                            else:
+                                tts.tts_to_file(text=fragment, file_path=clip_path)
+                            if not validate_audio_with_whisper(clip_path, fragment):
+                                print("[Whisper] Second attempt still flagged – keeping clip anyway.")
+                        except Exception as regen_exc:
+                            print(f"[Whisper] Regeneration failed: {regen_exc}")
+
+                # -----------------------------------------------------------------
+                # SFX generation (opt-in ambient sound effects)
+                # -----------------------------------------------------------------
+                if enable_sfx_var.get() and AUDIOCRAFT_AVAILABLE and detect_sfx_in_text(fragment):
+                    sfx_out = f"Working_files/temp/sfx_{temp_count}.wav"
+                    generate_sfx_audio(fragment[:100], sfx_out, duration=3.0)
+
                 
                 
         temp_input_directory = "Working_files/temp"  # Replace with the actual input directory path
@@ -2809,6 +3139,34 @@ def generate_audio(text, audio_id, language, speaker, voice_actor):
                 if 'tts' not in locals():
                     tts = TTS(selected_tts_model, progress_bar=True).to(device)
                 tts.tts_to_file(text=fragment, file_path=f"Working_files/temp/{temp_count}.wav")
+
+            # Whisper hallucination cleanup
+            clip_path = f"Working_files/temp/{temp_count}.wav"
+            if enable_whisper_var.get() and WHISPER_AVAILABLE and os.path.exists(clip_path):
+                if not validate_audio_with_whisper(clip_path, fragment):
+                    print(f"[Whisper] Hallucination detected – removing and regenerating: '{fragment[:60]}'")
+                    try:
+                        os.remove(clip_path)
+                    except OSError:
+                        pass
+                    try:
+                        if "multi-dataset" in selected_tts_model and "multilingual" in selected_tts_model:
+                            tts.tts_to_file(text=fragment, file_path=clip_path,
+                                            speaker_wav=list_reference_files(voice_actor),
+                                            language=language_code)
+                        elif "multilingual" in selected_tts_model:
+                            tts.tts_to_file(text=fragment, file_path=clip_path, language=language_code)
+                        else:
+                            tts.tts_to_file(text=fragment, file_path=clip_path)
+                        if not validate_audio_with_whisper(clip_path, fragment):
+                            print("[Whisper] Second attempt still flagged – keeping clip anyway.")
+                    except Exception as regen_exc:
+                        print(f"[Whisper] Regeneration failed: {regen_exc}")
+
+            # SFX generation (opt-in)
+            if enable_sfx_var.get() and AUDIOCRAFT_AVAILABLE and detect_sfx_in_text(fragment):
+                sfx_out = f"Working_files/temp/sfx_{temp_count}.wav"
+                generate_sfx_audio(fragment[:100], sfx_out, duration=3.0)
 
     temp_input_directory = "Working_files/temp"  # Replace with the actual input directory path
     output_directory = "Working_files/generated_audio_clips"  # Replace with the desired output directory path

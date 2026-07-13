@@ -165,3 +165,5 @@ wasabi==1.1.2
 weasel==0.3.4
 Werkzeug==3.0.1
 yarl==1.9.2
+# Optional: Whisper hallucination cleanup
+openai-whisper
